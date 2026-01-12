@@ -1,5 +1,4 @@
 import org.telegram.telegrambots.longpolling.TelegramBotsLongPollingApplication;
-import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 public class Main {
 
@@ -7,11 +6,10 @@ public class Main {
         String botToken = Config.get("BOT_TOKEN");
         try (TelegramBotsLongPollingApplication botsApplication = new TelegramBotsLongPollingApplication()) {
             botsApplication.registerBot(botToken, new CarFantasyBot(botToken));
-            System.out.println("MyAmazingBot successfully started!");
+            System.out.println("CarFantasyBot avviato con successo!");
             Thread.currentThread().join();
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
-
 }
