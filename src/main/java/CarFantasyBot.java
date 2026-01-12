@@ -33,11 +33,12 @@ public class CarFantasyBot implements LongPollingSingleThreadUpdateConsumer {
         try {
             switch (cmd) {
                 case "/start":
-                    return "🚗 Ciao! Sono Car Fantasy Bot!\n\n" +
+                    return "🚗 Benvenuto nel Car Fantasy Bot!\n\n" +
                             "Comandi disponibili:\n" +
                             "/marche - Lista di tutte le marche disponibili\n" +
                             "/cerca <marca> - Cerca modelli per marca (es: /cerca toyota)\n" +
-                            "/modello <id> - Info dettagliate su un modello\n" +
+                            "/dettagli <marca> <modello> - Info complete (es: /dettagli Toyota Camry)\n" +
+                            "  Puoi anche specificare l'anno: /dettagli Toyota Camry 2020\n" +
                             "/anno <anno> - Cerca auto per anno (es: /anno 2020)\n" +
                             "/random - Mostra una macchina casuale\n" +
                             "/help - Mostra questo messaggio";
@@ -46,7 +47,10 @@ public class CarFantasyBot implements LongPollingSingleThreadUpdateConsumer {
                     return "🔍 Comandi disponibili:\n\n" +
                             "/marche - Mostra tutte le marche\n" +
                             "/cerca <marca> - Cerca modelli (es: /cerca bmw)\n" +
-                            "/modello <id> - Dettagli modello specifico\n" +
+                            "/dettagli <marca> <modello> [anno] - Info complete\n" +
+                            "  Esempi:\n" +
+                            "  /dettagli BMW M3 (mostra anni disponibili)\n" +
+                            "  /dettagli BMW M3 2020 (dettagli anno specifico)\n" +
                             "/anno <anno> - Cerca per anno (es: /anno 2021)\n" +
                             "/random - Mostra una macchina casuale";
 
@@ -59,9 +63,9 @@ public class CarFantasyBot implements LongPollingSingleThreadUpdateConsumer {
                     }
                     return carApiService.searchByMake(parts[1]);
 
-                case "/modello":
+                case "/dettagli":
                     if (parts.length < 2) {
-                        return "❌ Specifica un ID modello. Esempio: /modello 123";
+                        return "❌ Specifica marca e modello. Esempio: /dettagli Toyota Camry";
                     }
                     return carApiService.getModelDetails(parts[1]);
 
