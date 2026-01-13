@@ -35,7 +35,7 @@ public class CarFantasyBot implements LongPollingSingleThreadUpdateConsumer {
                 handleDetailsWithPhoto(chatId, messageText);
             } else {
                 String response = handleCommand(messageText);
-                sendMessage(chatId, response);
+                sendMessage(chatId, response, true); // Con Markdown per comandi base
             }
         }
     }
@@ -43,7 +43,7 @@ public class CarFantasyBot implements LongPollingSingleThreadUpdateConsumer {
     private void handleSearchWithPhoto(long chatId, String command) {
         String[] parts = command.split(" ", 2);
         if (parts.length < 2) {
-            sendMessage(chatId, "❌ Specifica una marca. Esempio: /cerca toyota");
+            sendMessage(chatId, "❌ Specifica una marca. Esempio: /cerca toyota", true);
             return;
         }
         String make = parts[1];
@@ -54,7 +54,7 @@ public class CarFantasyBot implements LongPollingSingleThreadUpdateConsumer {
     private void handleDetailsWithPhoto(long chatId, String command) {
         String[] parts = command.split(" ", 2);
         if (parts.length < 2) {
-            sendMessage(chatId, "❌ Specifica un modello. Esempio: /dettagli Toyota Camry");
+            sendMessage(chatId, "❌ Specifica un modello. Esempio: /dettagli Toyota Camry", true);
             return;
         }
         String model = parts[1];
@@ -64,20 +64,20 @@ public class CarFantasyBot implements LongPollingSingleThreadUpdateConsumer {
 
     private void sendSearchResult(long chatId, SearchResult result) {
         if (result.hasError()) {
-            sendMessage(chatId, result.getErrorMessage());
+            sendMessage(chatId, result.getErrorMessage(), true);
             return;
         }
 
         if (result.getImageUrl() != null && !result.getImageUrl().isEmpty()) {
-            sendPhoto(chatId, result.getImageUrl(), result.getCaption());
+            sendPhoto(chatId, result.getImageUrl(), result.getCaption(), true); // Con Markdown
         } else {
-            sendMessage(chatId, result.getCaption());
+            sendMessage(chatId, result.getCaption(), true);
         }
     }
 
     private void sendDetailsWithButton(long chatId, SearchResult result, String model) {
         if (result.hasError()) {
-            sendMessage(chatId, result.getErrorMessage());
+            sendMessage(chatId, result.getErrorMessage(), false);
             return;
         }
 
@@ -104,7 +104,7 @@ public class CarFantasyBot implements LongPollingSingleThreadUpdateConsumer {
                             "/help - Mostra questo messaggio";
 
                 case "/help":
-                    return "🔍 Comandi disponibili:\n\n" +
+                    return "📖 Comandi disponibili:\n\n" +
                             "/cerca <marca> - Informazioni generali con foto (es: /cerca toyota)\n" +
                             "/dettagli <modello> - Specifiche tecniche con foto (es: /dettagli Toyota Camry)\n" +
                             "/help - Mostra questo messaggio";
@@ -127,13 +127,17 @@ public class CarFantasyBot implements LongPollingSingleThreadUpdateConsumer {
         }
     }
 
-    private void sendMessage(long chatId, String text) {
-        SendMessage message = SendMessage
+    private void sendMessage(long chatId, String text, boolean useMarkdown) {
+        SendMessage.SendMessageBuilder builder = SendMessage
                 .builder()
                 .chatId(String.valueOf(chatId))
-                .text(text)
-                .parseMode("Markdown")
-                .build();
+                .text(text);
+
+        if (useMarkdown) {
+            builder.parseMode("Markdown");
+        }
+
+        SendMessage message = builder.build();
 
         try {
             telegramClient.execute(message);
@@ -162,7 +166,7 @@ public class CarFantasyBot implements LongPollingSingleThreadUpdateConsumer {
                 .builder()
                 .chatId(String.valueOf(chatId))
                 .text(text)
-                .parseMode("Markdown")
+                // NON usiamo parseMode per i dettagli tecnici
                 .replyMarkup(keyboardMarkup)
                 .build();
 
@@ -173,10 +177,10 @@ public class CarFantasyBot implements LongPollingSingleThreadUpdateConsumer {
         }
     }
 
-    private void sendPhoto(long chatId, String photoUrl, String caption) {
+    private void sendPhoto(long chatId, String photoUrl, String caption, boolean useMarkdown) {
         try {
             if (photoUrl == null || photoUrl.isEmpty()) {
-                sendMessage(chatId, caption);
+                sendMessage(chatId, caption, useMarkdown);
                 return;
             }
 
@@ -184,22 +188,26 @@ public class CarFantasyBot implements LongPollingSingleThreadUpdateConsumer {
             String safeCaption = caption.length() > 1024 ?
                     caption.substring(0, 1020) + "..." : caption;
 
-            SendPhoto sendPhoto = SendPhoto
+            SendPhoto.SendPhotoBuilder builder = SendPhoto
                     .builder()
                     .chatId(String.valueOf(chatId))
                     .photo(photo)
-                    .caption(safeCaption)
-                    .parseMode("Markdown")
-                    .build();
+                    .caption(safeCaption);
+
+            if (useMarkdown) {
+                builder.parseMode("Markdown");
+            }
+
+            SendPhoto sendPhoto = builder.build();
 
             telegramClient.execute(sendPhoto);
         } catch (TelegramApiException e) {
             System.err.println("Errore Telegram: " + e.getMessage());
             // Fallback: invia solo il testo
-            sendMessage(chatId, caption + "\n\n⚠️ *Impossibile caricare l'immagine*");
+            sendMessage(chatId, caption + "\n\n⚠️ Impossibile caricare l'immagine", useMarkdown);
         } catch (Exception e) {
             System.err.println("Errore generale: " + e.getMessage());
-            sendMessage(chatId, caption);
+            sendMessage(chatId, caption, useMarkdown);
         }
     }
 
@@ -234,7 +242,7 @@ public class CarFantasyBot implements LongPollingSingleThreadUpdateConsumer {
                     .chatId(String.valueOf(chatId))
                     .photo(photo)
                     .caption(safeCaption)
-                    .parseMode("Markdown")
+                    // NON usiamo parseMode per i dettagli tecnici
                     .replyMarkup(keyboardMarkup)
                     .build();
 
@@ -245,7 +253,7 @@ public class CarFantasyBot implements LongPollingSingleThreadUpdateConsumer {
             sendMessageWithButton(chatId, caption, model);
         } catch (Exception e) {
             System.err.println("Errore generale: " + e.getMessage());
-            sendMessage(chatId, caption);
+            sendMessage(chatId, caption, false);
         }
     }
 }
