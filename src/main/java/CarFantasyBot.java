@@ -24,19 +24,142 @@ public class CarFantasyBot implements LongPollingSingleThreadUpdateConsumer {
 
     @Override
     public void consume(Update update) {
+        // Gestisci callback dei bottoni
+        if (update.hasCallbackQuery()) {
+            handleCallbackQuery(update);
+            return;
+        }
+
         if (update.hasMessage() && update.getMessage().hasText()) {
             String messageText = update.getMessage().getText();
             long chatId = update.getMessage().getChatId();
+
+            // Salva/aggiorna utente nel database
+            var message = update.getMessage();
+            var user = message.getFrom();
+            if (user != null) {
+                Database.getInstance().addOrUpdateUser(
+                        user.getId(),
+                        user.getUserName(),
+                        user.getFirstName(),
+                        user.getLastName()
+                );
+            }
 
             // Gestisci comandi che richiedono immagini
             if (messageText.toLowerCase().startsWith("/cerca ")) {
                 handleSearchWithPhoto(chatId, messageText);
             } else if (messageText.toLowerCase().startsWith("/dettagli ")) {
                 handleDetailsWithPhoto(chatId, messageText);
+            } else if (messageText.toLowerCase().startsWith("/preferiti")) {
+                handleFavorites(chatId);
             } else {
                 String response = handleCommand(messageText);
                 sendMessage(chatId, response, true); // Con Markdown per comandi base
             }
+        }
+    }
+
+    // Gestisci i callback dei bottoni
+    private void handleCallbackQuery(Update update) {
+        var callbackQuery = update.getCallbackQuery();
+        String callbackData = callbackQuery.getData();
+        long chatId = callbackQuery.getMessage().getChatId();
+        long userId = callbackQuery.getFrom().getId();
+        String username = callbackQuery.getFrom().getUserName();
+        String firstName = callbackQuery.getFrom().getFirstName();
+        String lastName = callbackQuery.getFrom().getLastName();
+
+        // Salva utente
+        Database.getInstance().addOrUpdateUser(userId, username, firstName, lastName);
+
+        if (callbackData.startsWith("add_favorite_")) {
+            String carName = callbackData.replace("add_favorite_", "").replace("_", " ");
+
+            boolean added = Database.getInstance().addFavorite(userId, carName);
+
+            String responseText;
+            if (added) {
+                responseText = "⭐ " + carName + " aggiunto ai preferiti!\n\n" +
+                        "Usa /preferiti per vedere la tua lista.";
+            } else {
+                responseText = "ℹ️ " + carName + " è già nei tuoi preferiti!";
+            }
+
+            // Rispondi al callback
+            answerCallbackQuery(callbackQuery.getId(), responseText);
+
+        } else if (callbackData.startsWith("remove_favorite_")) {
+            String carName = callbackData.replace("remove_favorite_", "").replace("_", " ");
+
+            boolean removed = Database.getInstance().removeFavorite(userId, carName);
+
+            String responseText = removed ?
+                    "🗑️ " + carName + " rimosso dai preferiti" :
+                    "❌ Errore nella rimozione";
+
+            answerCallbackQuery(callbackQuery.getId(), responseText);
+
+            // Aggiorna la lista preferiti
+            handleFavorites(chatId);
+        }
+    }
+
+    // Mostra i preferiti dell'utente
+    private void handleFavorites(long chatId) {
+        List<String> favorites = Database.getInstance().getUserFavorites(chatId);
+
+        if (favorites.isEmpty()) {
+            sendMessage(chatId, "⭐ Non hai ancora preferiti!\n\n" +
+                    "Usa /dettagli <modello> e clicca sul bottone per aggiungere auto ai preferiti.", true);
+            return;
+        }
+
+        StringBuilder message = new StringBuilder("⭐ I TUOI PREFERITI (" + favorites.size() + ")\n\n");
+
+        // Crea bottoni per rimuovere
+        List<InlineKeyboardRow> keyboard = new ArrayList<>();
+
+        for (String car : favorites) {
+            message.append("🚗 ").append(car).append("\n");
+
+            InlineKeyboardRow row = new InlineKeyboardRow();
+            row.add(InlineKeyboardButton.builder()
+                    .text("🗑️ " + car)
+                    .callbackData("remove_favorite_" + car.replace(" ", "_"))
+                    .build());
+            keyboard.add(row);
+        }
+
+        message.append("\n💡 Clicca su un bottone per rimuovere un'auto dai preferiti.");
+
+        InlineKeyboardMarkup keyboardMarkup = InlineKeyboardMarkup.builder()
+                .keyboard(keyboard)
+                .build();
+
+        SendMessage sendMessage = SendMessage.builder()
+                .chatId(String.valueOf(chatId))
+                .text(message.toString())
+                .replyMarkup(keyboardMarkup)
+                .build();
+
+        try {
+            telegramClient.execute(sendMessage);
+        } catch (TelegramApiException e) {
+            e.printStackTrace();
+        }
+    }
+
+    // Rispondi a un callback query
+    private void answerCallbackQuery(String callbackQueryId, String text) {
+        try {
+            telegramClient.execute(org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery.builder()
+                    .callbackQueryId(callbackQueryId)
+                    .text(text)
+                    .showAlert(false)
+                    .build());
+        } catch (TelegramApiException e) {
+            e.printStackTrace();
         }
     }
 
@@ -101,13 +224,18 @@ public class CarFantasyBot implements LongPollingSingleThreadUpdateConsumer {
                             "Comandi disponibili:\n" +
                             "/cerca <marca> - Informazioni generali con foto\n" +
                             "/dettagli <modello> - Specifiche tecniche con foto\n" +
+                            "/preferiti - Mostra i tuoi preferiti\n" +
                             "/help - Mostra questo messaggio";
 
                 case "/help":
                     return "📖 Comandi disponibili:\n\n" +
                             "/cerca <marca> - Informazioni generali con foto (es: /cerca toyota)\n" +
-                            "/dettagli <modello> - Specifiche tecniche con foto (es: /dettagli Toyota Camry)\n" +
+                            "/dettagli <modello> - Specifiche tecniche con foto (es: /dettagli Ferrari F40)\n" +
+                            "/preferiti - Mostra la tua lista di auto preferite\n" +
                             "/help - Mostra questo messaggio";
+
+                case "/preferiti":
+                    return "Usa il comando /preferiti per vedere la tua lista!";
 
                 case "/cerca":
                     return parts.length < 2 ?

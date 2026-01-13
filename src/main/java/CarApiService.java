@@ -22,7 +22,8 @@ public class CarApiService {
         try {
             String title = searchWikipedia(model);
             if (title == null) {
-                return SearchResult.error("❌ Nessun risultato per " + model);
+                return SearchResult.error("❌ Nessun risultato automobilistico trovato per: " + model +
+                        "\n\nℹ️ Assicurati di cercare un modello di automobile.");
             }
             return fetchTechnicalDetails(title);
         } catch (Exception e) {
@@ -34,7 +35,8 @@ public class CarApiService {
         try {
             String title = searchWikipedia(model);
             if (title == null) {
-                return "❌ Nessun risultato per " + model;
+                return "❌ Nessun risultato automobilistico trovato per: " + model +
+                        "\n\nℹ️ Assicurati di cercare un modello di automobile.";
             }
             SearchResult result = fetchTechnicalDetails(title);
             return result.hasError() ? result.getErrorMessage() : result.getCaption();
@@ -48,7 +50,8 @@ public class CarApiService {
         try {
             String title = searchWikipedia(make);
             if (title == null) {
-                return SearchResult.error("❌ Nessun risultato per " + make);
+                return SearchResult.error("❌ Nessun risultato automobilistico trovato per: " + make +
+                        "\n\nℹ️ Assicurati di cercare una marca o modello di automobile.");
             }
             return fetchGeneralInfo(title);
         } catch (Exception e) {
@@ -60,7 +63,8 @@ public class CarApiService {
         try {
             String title = searchWikipedia(make);
             if (title == null) {
-                return "❌ Nessun risultato per " + make;
+                return "❌ Nessun risultato automobilistico trovato per: " + make +
+                        "\n\nℹ️ Assicurati di cercare una marca o modello di automobile.";
             }
             SearchResult result = fetchGeneralInfo(title);
             return result.hasError() ? result.getErrorMessage() : result.getCaption();
@@ -75,7 +79,148 @@ public class CarApiService {
 
         // Prova prima italiano, poi inglese
         String title = searchInLanguage(query, "it");
-        return title != null ? title : searchInLanguage(query, "en");
+        if (title == null) {
+            title = searchInLanguage(query, "en");
+        }
+
+        // Verifica che il risultato sia effettivamente un'automobile
+        if (title != null && !isCarRelated(title, query)) {
+            return null;
+        }
+
+        return title;
+    }
+
+    // Verifica se il risultato è correlato ad automobili
+    private boolean isCarRelated(String title, String originalQuery) {
+        try {
+            // Ottieni le categorie della pagina Wikipedia
+            String categoriesUrl = String.format(
+                    "https://it.wikipedia.org/w/api.php?action=query&titles=%s&prop=categories&cllimit=50&format=json",
+                    URLEncoder.encode(title, StandardCharsets.UTF_8)
+            );
+
+            Request request = new Request.Builder()
+                    .url(categoriesUrl)
+                    .header("User-Agent", userAgent)
+                    .build();
+
+            try (Response response = client.newCall(request).execute()) {
+                if (!response.isSuccessful()) return false;
+
+                String body = response.body().string();
+                JsonObject root = JsonParser.parseString(body).getAsJsonObject();
+
+                if (!root.has("query")) return false;
+
+                JsonObject query = root.getAsJsonObject("query");
+                JsonObject pages = query.getAsJsonObject("pages");
+
+                // Ottieni la prima (e unica) pagina
+                String pageId = pages.keySet().iterator().next();
+                JsonObject page = pages.getAsJsonObject(pageId);
+
+                if (!page.has("categories")) {
+                    // Se non ha categorie, verifica almeno il titolo
+                    return isCarKeywordInTitle(title, originalQuery);
+                }
+
+                JsonArray categories = page.getAsJsonArray("categories");
+
+                // Parole chiave che identificano automobili nelle categorie Wikipedia
+                String[] carKeywords = {
+                        "automobil", "vettur", "auto", "vehicle", "car",
+                        "ferrari", "lamborghini", "porsche", "bmw", "mercedes",
+                        "fiat", "alfa romeo", "maserati", "audi", "volkswagen",
+                        "toyota", "honda", "nissan", "mazda", "ford",
+                        "chevrolet", "dodge", "jeep", "tesla", "bugatti",
+                        "mclaren", "aston martin", "bentley", "rolls-royce",
+                        "sport", "supercar", "gt", "berlinetta", "coupé",
+                        "sedan", "suv", "crossover", "roadster", "spider",
+                        "cabriolet", "hatchback", "station wagon"
+                };
+
+                String allCategories = categories.toString().toLowerCase();
+                System.out.println("Categorie trovate: " + allCategories);
+
+                // PRIMA: Verifica se contiene categorie auto
+                boolean hasCarCategory = false;
+                for (String keyword : carKeywords) {
+                    if (allCategories.contains(keyword)) {
+                        System.out.println("✓ Match trovato per keyword auto: " + keyword);
+                        hasCarCategory = true;
+                        break;
+                    }
+                }
+
+                // Se ha categorie auto, è valido (anche se ha biografia del designer)
+                if (hasCarCategory) {
+                    return true;
+                }
+
+                // Se NON ha categorie auto, verifica se è chiaramente NON-auto
+                String[] excludeKeywords = {
+                        "nati nel", "morti nel", "nati a", "morti a",
+                        "attori", "cantanti", "musicisti", "politici",
+                        "scrittori", "registi", "calciatori",
+                        "film del", "serie televisive", "album del",
+                        "singoli del", "brani musicali"
+                };
+
+                for (String exclude : excludeKeywords) {
+                    if (allCategories.contains(exclude)) {
+                        System.out.println("✗ Escluso per keyword: " + exclude);
+                        return false;
+                    }
+                }
+
+                // Se non troviamo categorie auto chiare, verifica il titolo
+                return isCarKeywordInTitle(title, originalQuery);
+            }
+
+        } catch (Exception e) {
+            System.err.println("Errore verifica categoria: " + e.getMessage());
+            // In caso di errore, verifica almeno il titolo
+            return isCarKeywordInTitle(title, originalQuery);
+        }
+    }
+
+    // Verifica se il titolo contiene parole chiave auto
+    private boolean isCarKeywordInTitle(String title, String originalQuery) {
+        String titleLower = title.toLowerCase();
+        String queryLower = originalQuery.toLowerCase();
+
+        // Marche automobilistiche comuni
+        String[] carBrands = {
+                "ferrari", "lamborghini", "porsche", "bmw", "mercedes", "audi",
+                "volkswagen", "vw", "fiat", "alfa romeo", "lancia", "maserati",
+                "toyota", "honda", "nissan", "mazda", "subaru", "mitsubishi",
+                "ford", "chevrolet", "dodge", "chrysler", "jeep", "gmc",
+                "tesla", "bugatti", "mclaren", "aston martin", "bentley",
+                "rolls-royce", "jaguar", "land rover", "volvo", "saab",
+                "peugeot", "renault", "citroën", "ds", "opel", "seat",
+                "skoda", "dacia", "hyundai", "kia", "lexus", "infiniti",
+                "acura", "cadillac", "lincoln", "buick", "pagani", "koenigsegg"
+        };
+
+        // Verifica se il titolo o la query contengono una marca
+        for (String brand : carBrands) {
+            if (titleLower.contains(brand) || queryLower.contains(brand)) {
+                return true;
+            }
+        }
+
+        // Verifica se contiene modelli/termini auto generici
+        String[] carTerms = {"gt", "turbo", "sport", "racing", "concept"};
+        for (String term : carTerms) {
+            if (titleLower.contains(term) && (titleLower.contains("auto") ||
+                    titleLower.contains("car") ||
+                    titleLower.contains("vettura"))) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private String searchInLanguage(String query, String lang) throws IOException {
