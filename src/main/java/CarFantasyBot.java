@@ -4,8 +4,14 @@ import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.send.SendPhoto;
 import org.telegram.telegrambots.meta.api.objects.InputFile;
 import org.telegram.telegrambots.meta.api.objects.Update;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public class CarFantasyBot implements LongPollingSingleThreadUpdateConsumer {
     private final TelegramClient telegramClient;
@@ -53,7 +59,7 @@ public class CarFantasyBot implements LongPollingSingleThreadUpdateConsumer {
         }
         String model = parts[1];
         SearchResult result = carApiService.getModelDetailsWithImage(model);
-        sendSearchResult(chatId, result);
+        sendDetailsWithButton(chatId, result, model);
     }
 
     private void sendSearchResult(long chatId, SearchResult result) {
@@ -66,6 +72,21 @@ public class CarFantasyBot implements LongPollingSingleThreadUpdateConsumer {
             sendPhoto(chatId, result.getImageUrl(), result.getCaption());
         } else {
             sendMessage(chatId, result.getCaption());
+        }
+    }
+
+    private void sendDetailsWithButton(long chatId, SearchResult result, String model) {
+        if (result.hasError()) {
+            sendMessage(chatId, result.getErrorMessage());
+            return;
+        }
+
+        // Se c'è un'immagine, invia con bottone
+        if (result.getImageUrl() != null && !result.getImageUrl().isEmpty()) {
+            sendPhotoWithButton(chatId, result.getImageUrl(), result.getCaption(), model);
+        } else {
+            // Se non c'è immagine, invia solo messaggio con bottone
+            sendMessageWithButton(chatId, result.getCaption(), model);
         }
     }
 
@@ -109,9 +130,40 @@ public class CarFantasyBot implements LongPollingSingleThreadUpdateConsumer {
     private void sendMessage(long chatId, String text) {
         SendMessage message = SendMessage
                 .builder()
-                .chatId(chatId)
+                .chatId(String.valueOf(chatId))
                 .text(text)
                 .parseMode("Markdown")
+                .build();
+
+        try {
+            telegramClient.execute(message);
+        } catch (TelegramApiException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void sendMessageWithButton(long chatId, String text, String model) {
+        // Crea il bottone inline usando InlineKeyboardRow
+        List<InlineKeyboardRow> keyboard = new ArrayList<>();
+        InlineKeyboardRow row = new InlineKeyboardRow();
+
+        row.add(InlineKeyboardButton.builder()
+                .text("⭐ Aggiungi ai preferiti")
+                .callbackData("add_favorite_" + model.replace(" ", "_"))
+                .build());
+
+        keyboard.add(row);
+
+        InlineKeyboardMarkup keyboardMarkup = InlineKeyboardMarkup.builder()
+                .keyboard(keyboard)
+                .build();
+
+        SendMessage message = SendMessage
+                .builder()
+                .chatId(String.valueOf(chatId))
+                .text(text)
+                .parseMode("Markdown")
+                .replyMarkup(keyboardMarkup)
                 .build();
 
         try {
@@ -134,7 +186,7 @@ public class CarFantasyBot implements LongPollingSingleThreadUpdateConsumer {
 
             SendPhoto sendPhoto = SendPhoto
                     .builder()
-                    .chatId(chatId)
+                    .chatId(String.valueOf(chatId))
                     .photo(photo)
                     .caption(safeCaption)
                     .parseMode("Markdown")
@@ -145,6 +197,52 @@ public class CarFantasyBot implements LongPollingSingleThreadUpdateConsumer {
             System.err.println("Errore Telegram: " + e.getMessage());
             // Fallback: invia solo il testo
             sendMessage(chatId, caption + "\n\n⚠️ *Impossibile caricare l'immagine*");
+        } catch (Exception e) {
+            System.err.println("Errore generale: " + e.getMessage());
+            sendMessage(chatId, caption);
+        }
+    }
+
+    private void sendPhotoWithButton(long chatId, String photoUrl, String caption, String model) {
+        try {
+            if (photoUrl == null || photoUrl.isEmpty()) {
+                sendMessageWithButton(chatId, caption, model);
+                return;
+            }
+
+            InputFile photo = new InputFile(photoUrl.trim());
+            String safeCaption = caption.length() > 1024 ?
+                    caption.substring(0, 1020) + "..." : caption;
+
+            // Crea il bottone inline usando InlineKeyboardRow
+            List<InlineKeyboardRow> keyboard = new ArrayList<>();
+            InlineKeyboardRow row = new InlineKeyboardRow();
+
+            row.add(InlineKeyboardButton.builder()
+                    .text("⭐ Aggiungi ai preferiti")
+                    .callbackData("add_favorite_" + model.replace(" ", "_"))
+                    .build());
+
+            keyboard.add(row);
+
+            InlineKeyboardMarkup keyboardMarkup = InlineKeyboardMarkup.builder()
+                    .keyboard(keyboard)
+                    .build();
+
+            SendPhoto sendPhoto = SendPhoto
+                    .builder()
+                    .chatId(String.valueOf(chatId))
+                    .photo(photo)
+                    .caption(safeCaption)
+                    .parseMode("Markdown")
+                    .replyMarkup(keyboardMarkup)
+                    .build();
+
+            telegramClient.execute(sendPhoto);
+        } catch (TelegramApiException e) {
+            System.err.println("Errore Telegram inviando foto con bottone: " + e.getMessage());
+            // Fallback: invia messaggio con bottone
+            sendMessageWithButton(chatId, caption, model);
         } catch (Exception e) {
             System.err.println("Errore generale: " + e.getMessage());
             sendMessage(chatId, caption);
